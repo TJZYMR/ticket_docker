@@ -1,0 +1,74 @@
+version: '3'
+
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Movie_tickets_booking:/app
+    command: >
+      sh -c "python3 manage.py migrate &&
+             python3 manage.py runserver 0.0.0.0:8000"
+    env_file:
+      - ./.env
+    depends_on:
+      - db
+
+  db:
+    image: postgres:10-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - 6543:5432
+  redis:
+    image: redis:alpine
+  celery:
+    restart: always
+    build:
+      context: .
+    command: celery -A Movie_tickets_booking worker --loglevel=info -P eventlet
+    volumes:
+      - ./Movie_tickets_booking:/app
+    env_file:
+      - ./.env
+    depends_on:
+      - db
+      - redis
+      - app
+  celery-beat:
+    container_name: celery-beat
+    build:
+      context: .
+    command: celery -A Movie_tickets_booking beat -l info
+    volumes:
+      - ./Movie_tickets_booking:/app
+    env_file:
+      - ./.env
+    depends_on:
+      - celery
+      - redis
+  flower:
+    image: mher/flower
+    container_name: flower
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379
+      - FLOWER_PORT=8888
+    ports:
+      - 8888:8888
+    links:
+      - redis
+      - celery
+      - celery-beat
+    depends_on:
+      - redis
+      - celery
+      - celery-beat
+
+volumes:
+  pgdata:
